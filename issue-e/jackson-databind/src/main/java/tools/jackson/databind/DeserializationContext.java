@@ -1432,9 +1432,11 @@ public abstract class DeserializationContext
         for (; h != null; h = h.next()) {
             Object goodValue = h.value().handleUnexpectedNull(this, targetType, failureMsg);
             if (goodValue != DeserializationProblemHandler.NOT_HANDLED) {
-                if ((goodValue == null) || raw.isInstance(goodValue)) {
-                    return goodValue;
-                }
+                if ((goodValue == null)
+                        || raw.isInstance(goodValue)
+                        || (raw.isPrimitive() && ClassUtil.wrapperType(raw).isInstance(goodValue))) {
+                        return goodValue;
+                    }
                 throw DatabindException.from(getParser(), _format(
 "DeserializationProblemHandler.handleUnexpectedNull() for type %s returned value of type %s",
                     ClassUtil.getClassDescription(targetType),

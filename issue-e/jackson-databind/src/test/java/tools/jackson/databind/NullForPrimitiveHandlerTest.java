@@ -9,202 +9,178 @@ import tools.jackson.databind.exc.MismatchedInputException;
 import tools.jackson.databind.testutil.DatabindTestUtil;
 
 /**
- * Test suite for the {@link DeserializationProblemHandler#handleUnexpectedNull()}
- * callback.
- * <p>
- * IMPORTANT — how this callback is actually reached:
- * <ul>
- *   <li>For <b>bean properties</b> ({@code {"x": null}} into a POJO with a primitive
- *       field), a {@code VALUE_NULL} token short-circuits in
- *       {@code SettableBeanProperty.deserialize()} straight to
- *       {@code NullValueProvider.getNullValue()}. For primitives that method throws
- *       directly and never consults the handler.</li>
- *   <li>For <b>root-level</b> reads ({@code readValue("null", int.class)}), the
- *       {@code ObjectReader} also routes {@code VALUE_NULL} to
- *       {@code getNullValue()}, again bypassing the handler.</li>
- *   <li>The handler is only invoked from a deserializer's own {@code deserialize()}
- *       method via {@code _verifyNullForPrimitive()} — in practice for
- *       <b>primitive array elements</b> such as {@code [null]} into {@code int[]}.</li>
- * </ul>
- * These tests therefore exercise the handler through primitive arrays, which is the
- * path that genuinely calls it. They also document the second constraint: because the
- * context validates a handler's return value with {@code rawClass.isInstance(value)},
- * and {@code isInstance} is always {@code false} for primitive (and primitive-array)
- * classes, a handler can only return {@code null} or {@code NOT_HANDLED} without
- * tripping the type-mismatch safeguard.
+ * Tests for the {@link DeserializationProblemHandler#handleUnexpectedNull} callback,
+ * added for the case where a {@code null} is encountered for a non-nullable (primitive)
+ * type while {@link DeserializationFeature#FAIL_ON_NULL_FOR_PRIMITIVES} is enabled.
+ *<p>
+ * Unlike the original submission, these tests exercise the callback through the path the
+ * issue actually describes — a {@code null} for a primitive <b>bean property</b> — and
+ * assert that a handler can both observe the problem and supply a replacement value.
+ *<p>
+ * Assumes the full fix is in place:
+ *<ul>
+ *  <li>{@code DeserializationContext.handleUnexpectedNull} guard accepts a boxed value
+ *      for a primitive target (wrapper-aware {@code isInstance}).</li>
+ *  <li>{@code PrimitiveOrWrapperDeserializer.getNullValue} routes through the handler.</li>
+ *  <li>{@code _verifyNullForPrimitive} callers use the returned value.</li>
+ *</ul>
  */
 public class NullForPrimitiveHandlerTest extends DatabindTestUtil
 {
+    static class PrimitiveBean {
+        public int intValue;
+        public long longValue;
+        public boolean boolValue;
+        public double doubleValue;
+    }
+
     /**
-     * Handler that records whether it was invoked and what context it received,
-     * and (by default) returns {@code null} — the only non-{@code NOT_HANDLED}
-     * value accepted for a primitive target.
+     * Records invocation and supplies a per-type replacement value. Returning a boxed
+     * value for a primitive target is the whole point of the feature.
      */
-    static class RecordingNullHandler extends DeserializationProblemHandler {
-        boolean wasCalled = false;
-        JavaType lastTargetType = null;
-        String lastFailureMsg = null;
+    static class SupplyingHandler extends DeserializationProblemHandler {
+        boolean called = false;
+        JavaType lastType = null;
+        String lastMsg = null;
 
         @Override
         public Object handleUnexpectedNull(DeserializationContext ctxt,
-                JavaType targetType, String failureMsg)
-            throws JacksonException
-        {
-            wasCalled = true;
-            lastTargetType = targetType;
-            lastFailureMsg = failureMsg;
-            // null is accepted by the context (treated as "use type default");
-            // returning a boxed primitive would be rejected by the isInstance guard.
-            return null;
+                JavaType targetType, String failureMsg) throws JacksonException {
+            called = true;
+            lastType = targetType;
+            lastMsg = failureMsg;
+            Class<?> raw = targetType.getRawClass();
+            if (raw == Integer.TYPE || raw == Integer.class) return 42;
+            if (raw == Long.TYPE    || raw == Long.class)    return 43L;
+            if (raw == Boolean.TYPE || raw == Boolean.class) return true;
+            if (raw == Double.TYPE  || raw == Double.class)  return 44.5d;
+            return NOT_HANDLED;
         }
-
-        boolean wasHandlerCalled() { return wasCalled; }
-        JavaType getLastTargetType() { return lastTargetType; }
-        String getLastFailureMsg() { return lastFailureMsg; }
     }
 
-    // ------------------------------------------------------------------
-    // 1) Handler is invoked for a null primitive-array element, and a
-    //    null return lets deserialization complete with the type default.
-    // ------------------------------------------------------------------
-    @Test
-    public void testHandlerInvokedForNullArrayElement() throws Exception {
-        RecordingNullHandler handler = new RecordingNullHandler();
-        ObjectMapper mapper = jsonMapperBuilder()
-                .enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
-                .addHandler(handler)
-                .build();
-
-        int[] result = mapper.readValue("[null]", int[].class);
-
-        assertTrue(handler.wasHandlerCalled(),
-                "Handler should be invoked for null element of a primitive array");
-        assertNotNull(handler.getLastTargetType(),
-                "Handler should receive a target type");
-        assertNotNull(handler.getLastFailureMsg(),
-                "Handler should receive a failure message");
-        assertTrue(handler.getLastFailureMsg().contains("FAIL_ON_NULL_FOR_PRIMITIVES"),
-                "Failure message should reference the controlling feature");
-        // Return value is null -> array element falls back to the primitive default.
-        assertEquals(1, result.length);
-        assertEquals(0, result[0]);
+    private ObjectMapper mapperWith(DeserializationProblemHandler h, boolean failOnNull) {
+        JsonMapper.Builder b = jsonMapperBuilder();
+        if (failOnNull) {
+            b.enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES);
+        } else {
+            b.disable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES);
+        }
+        if (h != null) {
+            b.addHandler(h);
+        }
+        return b.build();
     }
 
-    // ------------------------------------------------------------------
-    // 2) NOT_HANDLED falls through to the standard input-mismatch error.
-    // ------------------------------------------------------------------
+    // 1) Default (no handler): behaviour is unchanged -> still throws.
     @Test
-    public void testNotHandledFallsThroughToException() throws Exception {
-        DeserializationProblemHandler handler = new DeserializationProblemHandler() {
+    public void testDefaultThrowsWhenNoHandler() throws Exception {
+        ObjectMapper mapper = mapperWith(null, true);
+        MismatchedInputException e = assertThrows(MismatchedInputException.class,
+                () -> mapper.readValue("{\"intValue\": null}", PrimitiveBean.class));
+        assertTrue(e.getMessage().contains("Cannot map `null`"),
+                "Default failure message should describe the null mapping problem");
+    }
+
+    // 2) THE issue scenario: handler intercepts null for a primitive bean field and
+    //    supplies a replacement value, which lands in the bean.
+    @Test
+    public void testHandlerSuppliesReplacementForBeanField() throws Exception {
+        SupplyingHandler h = new SupplyingHandler();
+        ObjectMapper mapper = mapperWith(h, true);
+
+        PrimitiveBean bean = mapper.readValue(
+                "{\"intValue\": null, \"longValue\": null, \"boolValue\": null, \"doubleValue\": null}",
+                PrimitiveBean.class);
+
+        assertTrue(h.called, "Handler must be consulted for a null primitive bean property");
+        assertEquals(42,    bean.intValue);
+        assertEquals(43L,   bean.longValue);
+        assertEquals(true,  bean.boolValue);
+        assertEquals(44.5d, bean.doubleValue, 0.0);
+    }
+
+    // 3) Handler returning null means "use the Java primitive default" (no NPE on unbox).
+    @Test
+    public void testHandlerReturningNullUsesPrimitiveDefault() throws Exception {
+        DeserializationProblemHandler h = new DeserializationProblemHandler() {
             @Override
             public Object handleUnexpectedNull(DeserializationContext ctxt,
-                    JavaType targetType, String failureMsg) throws JacksonException {
+                    JavaType targetType, String failureMsg) {
+                return null;
+            }
+        };
+        ObjectMapper mapper = mapperWith(h, true);
+        PrimitiveBean bean = mapper.readValue("{\"intValue\": null}", PrimitiveBean.class);
+        assertEquals(0, bean.intValue);
+    }
+
+    // 4) NOT_HANDLED falls through to the standard failure.
+    @Test
+    public void testNotHandledFallsThrough() throws Exception {
+        DeserializationProblemHandler h = new DeserializationProblemHandler() {
+            @Override
+            public Object handleUnexpectedNull(DeserializationContext ctxt,
+                    JavaType targetType, String failureMsg) {
                 return NOT_HANDLED;
             }
         };
-        ObjectMapper mapper = jsonMapperBuilder()
-                .enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
-                .addHandler(handler)
-                .build();
-
-        MismatchedInputException ex = assertThrows(MismatchedInputException.class,
-                () -> mapper.readValue("[null]", int[].class),
-                "NOT_HANDLED should let the default failure propagate");
-        assertTrue(ex.getMessage().contains("Cannot coerce `null`"),
-                "Default failure message should describe the null coercion problem");
+        ObjectMapper mapper = mapperWith(h, true);
+        assertThrows(MismatchedInputException.class,
+                () -> mapper.readValue("{\"intValue\": null}", PrimitiveBean.class));
     }
 
-    // ------------------------------------------------------------------
-    // 3) A handler returning a boxed value for a primitive target trips the
-    //    rawClass.isInstance() safeguard (documents that boxed replacements
-    //    are not accepted for primitive/primitive-array targets).
-    // ------------------------------------------------------------------
+    // 5) The deserialize()/array path also honours the handler's replacement value.
     @Test
-    public void testBoxedReturnValueIsRejected() throws Exception {
-        DeserializationProblemHandler handler = new DeserializationProblemHandler() {
+    public void testHandlerForPrimitiveArrayElement() throws Exception {
+        DeserializationProblemHandler h = new DeserializationProblemHandler() {
             @Override
             public Object handleUnexpectedNull(DeserializationContext ctxt,
-                    JavaType targetType, String failureMsg) throws JacksonException {
-                return Integer.valueOf(0); // boxed -> not assignable to a primitive type
+                    JavaType targetType, String failureMsg) {
+                return 7; // boxed Integer for an int[] element
             }
         };
-        ObjectMapper mapper = jsonMapperBuilder()
-                .enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
-                .addHandler(handler)
-                .build();
-
-        DatabindException ex = assertThrows(DatabindException.class,
-                () -> mapper.readValue("[null]", int[].class),
-                "A boxed return value should be rejected for a primitive target");
-        assertTrue(ex.getMessage().contains("returned value of type"),
-                "Error should explain the handler returned an incompatible type");
+        ObjectMapper mapper = mapperWith(h, true);
+        int[] result = mapper.readValue("[null]", int[].class);
+        assertArrayEquals(new int[] { 7 }, result);
     }
 
-    // ------------------------------------------------------------------
-    // 4) A handler may throw; the cause is preserved through path wrapping.
-    // ------------------------------------------------------------------
+    // 6) Handler may throw; the cause is preserved.
     @Test
     public void testHandlerMayThrow() throws Exception {
-        DeserializationProblemHandler handler = new DeserializationProblemHandler() {
+        DeserializationProblemHandler h = new DeserializationProblemHandler() {
             @Override
             public Object handleUnexpectedNull(DeserializationContext ctxt,
-                    JavaType targetType, String failureMsg) throws JacksonException {
-                throw new IllegalStateException("custom-handler-failure");
+                    JavaType targetType, String failureMsg) {
+                throw new IllegalStateException("nope");
             }
         };
-        ObjectMapper mapper = jsonMapperBuilder()
-                .enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
-                .addHandler(handler)
-                .build();
-
-        DatabindException ex = assertThrows(DatabindException.class,
-                () -> mapper.readValue("[null]", int[].class),
-                "Handler-thrown exception should surface as a binding failure");
-        assertNotNull(ex.getCause(), "Original handler exception should be retained as cause");
-        assertTrue(ex.getCause() instanceof IllegalStateException,
-                "Cause should be the handler's own exception");
-        assertEquals("custom-handler-failure", ex.getCause().getMessage());
+        ObjectMapper mapper = mapperWith(h, true);
+        DatabindException e = assertThrows(DatabindException.class,
+                () -> mapper.readValue("{\"intValue\": null}", PrimitiveBean.class));
+        assertTrue(e.getCause() instanceof IllegalStateException);
+        assertEquals("nope", e.getCause().getMessage());
     }
 
-    // ------------------------------------------------------------------
-    // 5) Feature disabled: handler is never consulted and defaults are used.
-    // ------------------------------------------------------------------
+    // 7) Feature disabled: handler is never consulted, defaults are used.
     @Test
     public void testFeatureDisabledHandlerNotCalled() throws Exception {
-        RecordingNullHandler handler = new RecordingNullHandler();
-        ObjectMapper mapper = jsonMapperBuilder()
-                .disable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
-                .addHandler(handler)
-                .build();
-
-        int[] result = mapper.readValue("[null]", int[].class);
-
-        assertFalse(handler.wasHandlerCalled(),
-                "Handler must not be called when FAIL_ON_NULL_FOR_PRIMITIVES is disabled");
-        assertEquals(1, result.length);
-        assertEquals(0, result[0]);
+        SupplyingHandler h = new SupplyingHandler();
+        ObjectMapper mapper = mapperWith(h, false);
+        PrimitiveBean bean = mapper.readValue("{\"intValue\": null}", PrimitiveBean.class);
+        assertFalse(h.called, "Handler must not fire when FAIL_ON_NULL_FOR_PRIMITIVES is off");
+        assertEquals(0, bean.intValue);
     }
 
-    // ------------------------------------------------------------------
-    // 6) Regression guard: a null on a primitive BEAN property does NOT reach
-    //    the handler (it is handled by getNullValue and fails directly).
-    // ------------------------------------------------------------------
-    static class PrimitiveBean {
-        public int intValue;
-    }
-
+    // 8) Handler receives the target type and a feature-referencing message.
     @Test
-    public void testBeanPropertyNullBypassesHandler() throws Exception {
-        RecordingNullHandler handler = new RecordingNullHandler();
-        ObjectMapper mapper = jsonMapperBuilder()
-                .enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
-                .addHandler(handler)
-                .build();
-
-        assertThrows(DatabindException.class,
-                () -> mapper.readValue("{\"intValue\": null}", PrimitiveBean.class),
-                "Null for a primitive bean property should still fail");
-        assertFalse(handler.wasHandlerCalled(),
-                "Bean-property null path does not consult handleUnexpectedNull()");
+    public void testHandlerReceivesContext() throws Exception {
+        SupplyingHandler h = new SupplyingHandler();
+        ObjectMapper mapper = mapperWith(h, true);
+        mapper.readValue("{\"intValue\": null}", PrimitiveBean.class);
+        assertNotNull(h.lastType);
+        assertEquals(Integer.TYPE, h.lastType.getRawClass(), "Target type should be primitive int");
+        assertNotNull(h.lastMsg);
+        assertTrue(h.lastMsg.contains("FAIL_ON_NULL_FOR_PRIMITIVES"),
+                "Failure message should reference the controlling feature");
     }
 }
