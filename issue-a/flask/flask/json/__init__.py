@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import io
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from flask.globals import current_app, request
 from flask._compat import text_type, PY2
 
@@ -64,21 +64,18 @@ class JSONEncoder(_json.JSONEncoder):
         """
         if isinstance(o, date):
             if isinstance(o, datetime):
+                # Timezone-aware datetimes are normalised to UTC so the offset in the
+                # output is always accurate (ISSUE.md). Naive datetimes are assumed to
+                # already be UTC and keep their existing output format unchanged.
                 if o.tzinfo is not None:
-                    # Use the built-in utctimetuple() method which is specifically
-                    # designed for timezone-aware datetimes. It correctly converts
-                    # the local time to UTC by accounting for the UTC offset.
-                    # Reference: https://docs.python.org/3/library/datetime.html#datetime.datetime.utctimetuple
                     try:
-                        return http_date(o.utctimetuple())
-                    except (ValueError, TypeError, OSError) as e:
-                        # If utctimetuple() fails, raise a more descriptive error
+                        return o.astimezone(timezone.utc).isoformat()
+                    except OverflowError:
                         raise TypeError(
-                            'Failed to serialize timezone-aware datetime {!r}: {}'.format(o, e)
+                            'datetime %r is too close to the min/max boundary to be '
+                            'normalised to UTC' % (o,)
                         )
-                # Timezone-naive datetime: use directly
                 return http_date(o.timetuple())
-            # Date objects (non-datetime): use directly
             return http_date(o.timetuple())
         if isinstance(o, uuid.UUID):
             return str(o)
