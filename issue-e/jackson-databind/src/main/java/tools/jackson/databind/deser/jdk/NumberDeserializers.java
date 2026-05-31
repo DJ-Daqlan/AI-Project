@@ -478,7 +478,8 @@ public class NumberDeserializers
                         "value outside valid Character range (0x0000 - 0xFFFF)");
             case JsonTokenId.ID_NULL:
                 if (_primitive) {
-                    _verifyNullForPrimitive(ctxt);
+                    Object res = _verifyNullForPrimitive(ctxt);
+                    return (res == null) ? _nullValue : (Character) res;
                 }
                 return (Character) getNullValue(ctxt);
             case JsonTokenId.ID_START_ARRAY:

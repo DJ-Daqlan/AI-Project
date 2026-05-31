@@ -282,8 +282,8 @@ public abstract class PrimitiveArrayDeserializers<T>
                             _nuller.getNullValue(ctxt);
                             continue;
                         }
-                        _verifyNullForPrimitive(ctxt);
-                        str = "\0";
+                        Object res = _verifyNullForPrimitive(ctxt);
+                        str = (res == null) ? "\0" : String.valueOf(((Character) res).charValue());
                     } else {
                         CharSequence cs = (CharSequence) ctxt.handleUnexpectedToken(getValueType(ctxt), p);
                         str = cs.toString();
@@ -382,8 +382,8 @@ public abstract class PrimitiveArrayDeserializers<T>
                             _nuller.getNullValue(ctxt);
                             continue;
                         }
-                        _verifyNullForPrimitive(ctxt);
-                        value = false;
+                        Object res = _verifyNullForPrimitive(ctxt);
+                        value = (res == null) ? false : ((Boolean) res).booleanValue();
                     } else {
                         value = _parseBooleanPrimitive(p, ctxt);
                     }
@@ -497,8 +497,8 @@ public abstract class PrimitiveArrayDeserializers<T>
                                 _nuller.getNullValue(ctxt);
                                 continue;
                             }
-                            _verifyNullForPrimitive(ctxt);
-                            value = (byte) 0;
+                            Object res = _verifyNullForPrimitive(ctxt);
+                            value = (res == null) ? (byte) 0 : ((Number) res).byteValue();
                         } else {
                             value = _parseBytePrimitive(p, ctxt);
                         }
@@ -589,8 +589,8 @@ public abstract class PrimitiveArrayDeserializers<T>
                             _nuller.getNullValue(ctxt);
                             continue;
                         }
-                        _verifyNullForPrimitive(ctxt);
-                        value = (short) 0;
+                        Object res = _verifyNullForPrimitive(ctxt);
+                        value = (res == null) ? (short) 0 : ((Number) res).shortValue();
                     } else {
                         value = _parseShortPrimitive(p, ctxt);
                     }
@@ -666,8 +666,8 @@ public abstract class PrimitiveArrayDeserializers<T>
                             _nuller.getNullValue(ctxt);
                             continue;
                         }
-                        _verifyNullForPrimitive(ctxt);
-                        value = 0;
+                        Object res = _verifyNullForPrimitive(ctxt);
+                        value = (res == null) ? 0 : ((Number) res).intValue();
                     } else {
                         value = _parseIntPrimitive(p, ctxt);
                     }
@@ -743,8 +743,8 @@ public abstract class PrimitiveArrayDeserializers<T>
                             _nuller.getNullValue(ctxt);
                             continue;
                         }
-                        _verifyNullForPrimitive(ctxt);
-                        value = 0L;
+                        Object res = _verifyNullForPrimitive(ctxt);
+                        value = (res == null) ? 0L : ((Number) res).longValue();
                     } else {
                         value = _parseLongPrimitive(p, ctxt);
                     }

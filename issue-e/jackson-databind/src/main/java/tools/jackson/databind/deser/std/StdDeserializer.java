@@ -659,8 +659,8 @@ public abstract class StdDeserializer<T>
                 LogicalType.Integer, Short.TYPE);
         if (act == CoercionAction.AsNull) {
             // 03-May-2021, tatu: Might not be allowed (should we do "empty" check?)
-            _verifyNullForPrimitive(ctxt);
-            return (short) 0;
+            Object res = _verifyNullForPrimitive(ctxt);
+            return (res == null) ? (short) 0 : ((Number) res).shortValue();
         }
         if (act == CoercionAction.AsEmpty) {
             return (short) 0;
@@ -707,8 +707,10 @@ public abstract class StdDeserializer<T>
             // Here regular (strict) accessor is fine
             return p.getIntValue();
         case JsonTokenId.ID_NULL:
-            _verifyNullForPrimitive(ctxt);
-            return 0;
+            {
+                Object res = _verifyNullForPrimitive(ctxt);
+                return (res == null) ? 0 : ((Number) res).intValue();
+            }
         // 29-Jun-2020, tatu: New! "Scalar from Object" (mostly for XML)
         case JsonTokenId.ID_START_OBJECT:
             text = ctxt.extractScalarFromObject(p, this, Integer.TYPE);
@@ -735,8 +737,8 @@ public abstract class StdDeserializer<T>
                 LogicalType.Integer, Integer.TYPE);
         if (act == CoercionAction.AsNull) {
             // 03-May-2021, tatu: Might not be allowed (should we do "empty" check?)
-            _verifyNullForPrimitive(ctxt);
-            return 0;
+            Object res = _verifyNullForPrimitive(ctxt);
+            return (res == null) ? 0 : ((Number) res).intValue();
         }
         if (act == CoercionAction.AsEmpty) {
             return 0;
@@ -863,8 +865,10 @@ public abstract class StdDeserializer<T>
         case JsonTokenId.ID_NUMBER_INT:
             return p.getLongValue();
         case JsonTokenId.ID_NULL:
-            _verifyNullForPrimitive(ctxt);
-            return 0L;
+            {
+                Object res = _verifyNullForPrimitive(ctxt);
+                return (res == null) ? 0L : ((Number) res).longValue();
+            }
         // 29-Jun-2020, tatu: New! "Scalar from Object" (mostly for XML)
         case JsonTokenId.ID_START_OBJECT:
             text = ctxt.extractScalarFromObject(p, this, Long.TYPE);
@@ -891,8 +895,8 @@ public abstract class StdDeserializer<T>
                 LogicalType.Integer, Long.TYPE);
         if (act == CoercionAction.AsNull) {
             // 03-May-2021, tatu: Might not be allowed (should we do "empty" check?)
-            _verifyNullForPrimitive(ctxt);
-            return 0L;
+            Object res = _verifyNullForPrimitive(ctxt);
+            return (res == null) ? 0L : ((Number) res).longValue();
         }
         if (act == CoercionAction.AsEmpty) {
             return 0L;
@@ -1003,8 +1007,10 @@ public abstract class StdDeserializer<T>
         case JsonTokenId.ID_NUMBER_FLOAT:
             return p.getFloatValue();
         case JsonTokenId.ID_NULL:
-            _verifyNullForPrimitive(ctxt);
-            return 0f;
+            {
+                Object res = _verifyNullForPrimitive(ctxt);
+                return (res == null) ? 0f : ((Number) res).floatValue();
+            }
         // 29-Jun-2020, tatu: New! "Scalar from Object" (mostly for XML)
         case JsonTokenId.ID_START_OBJECT:
             text = ctxt.extractScalarFromObject(p, this, Float.TYPE);
@@ -1041,8 +1047,8 @@ public abstract class StdDeserializer<T>
                 LogicalType.Integer, Float.TYPE);
         if (act == CoercionAction.AsNull) {
             // 03-May-2021, tatu: Might not be allowed (should we do "empty" check?)
-            _verifyNullForPrimitive(ctxt);
-            return  0.0f;
+            Object res = _verifyNullForPrimitive(ctxt);
+            return (res == null) ? 0f : ((Number) res).floatValue();
         }
         if (act == CoercionAction.AsEmpty) {
             return  0.0f;
@@ -1123,8 +1129,10 @@ public abstract class StdDeserializer<T>
         case JsonTokenId.ID_NUMBER_FLOAT:
             return p.getDoubleValue();
         case JsonTokenId.ID_NULL:
-            _verifyNullForPrimitive(ctxt);
-            return 0.0;
+            {
+                Object res = _verifyNullForPrimitive(ctxt);
+                return (res == null) ? 0.0 : ((Number) res).doubleValue();
+            }
         // 29-Jun-2020, tatu: New! "Scalar from Object" (mostly for XML)
         case JsonTokenId.ID_START_OBJECT:
             text = ctxt.extractScalarFromObject(p, this, Double.TYPE);
@@ -1161,8 +1169,8 @@ public abstract class StdDeserializer<T>
                 LogicalType.Integer, Double.TYPE);
         if (act == CoercionAction.AsNull) {
             // 03-May-2021, tatu: Might not be allowed (should we do "empty" check?)
-            _verifyNullForPrimitive(ctxt);
-            return  0.0;
+            Object res = _verifyNullForPrimitive(ctxt);
+            return (res == null) ? 0.0 : ((Number) res).doubleValue();
         }
         if (act == CoercionAction.AsEmpty) {
             return  0.0;
